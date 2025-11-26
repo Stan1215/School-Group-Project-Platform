@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartGroup - Course Management System</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <h1 class="logo">SmartGroup</h1>
+                <div class="user-controls">
+                    <select id="roleSelector" class="role-select">
+                        <option value="instructor">Instructor View</option>
+                        <option value="student">Student View</option>
+                    </select>
+                    <div class="user-info">
+                        <p class="user-name" id="userName">Dr. Jane Smith</p>
+                        <p class="user-role" id="userRoleText">Instructor</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="container main-container">
+        <div class="layout">
+            <!-- Sidebar Navigation -->
+            <aside class="sidebar">
+                <nav id="navigation"></nav>
+            </aside>
+
+            <!-- Main Content Area -->
+            <main class="content" id="mainContent">
+                <!-- Content will be dynamically loaded here -->
+            </main>
+        </div>
+    </div>
+
+    <!-- Instructor Content Templates -->
+    <template id="instructorCourseInfo">
+        <div class="panel">
+            <h2 class="panel-title">Course Information</h2>
+            
+            <div class="form-section">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Course Name</label>
+                        <input type="text" class="input" placeholder="e.g., Organization of Data">
+                    </div>
+                    <div class="form-group">
+                        <label>Section</label>
+                        <input type="text" class="input" placeholder="e.g., CS 101">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Grading System</label>
+                    <select class="input">
+                        <option>Letter Grade (A-F with +/-)</option>
+                        <option>Numerical (0-100)</option>
+                    </select>
+                </div>
+
+                <div class="section-divider">
+                    <h3 class="section-title">Add New Assignment</h3>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Assignment Title</label>
+                            <input type="text" class="input" placeholder="e.g., Database Design">
+                        </div>
+                        <div class="form-group">
+                            <label>Due Date</label>
+                            <input type="date" class="input">
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Students Per Group</label>
+                            <input type="number" class="input" placeholder="4">
+                        </div>
+                        <div class="form-group">
+                            <label>Number of Graders</label>
+                            <input type="number" class="input" placeholder="3">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Grading Rubric</label>
+                        <textarea class="textarea" rows="4" placeholder="Enter grading criteria and expectations..."></textarea>
+                    </div>
+                    
+                    <button class="btn btn-primary">Create Assignment</button>
+                </div>
+
+                <div class="section-divider">
+                    <h3 class="section-title">Existing Assignments</h3>
+                    <div class="assignment-list">
+                        <div class="assignment-item">
+                            <div>
+                                <p class="assignment-title">Database Design</p>
+                                <p class="assignment-meta">Due: 2024-12-15</p>
+                            </div>
+                            <span class="badge badge-green">active</span>
+                        </div>
+                        <div class="assignment-item">
+                            <div>
+                                <p class="assignment-title">Implementation</p>
+                                <p class="assignment-meta">Due: 2024-12-22</p>
+                            </div>
+                            <span class="badge badge-yellow">upcoming</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <template id="instructorEnrollment">
+        <div class="panel">
+            <h2 class="panel-title">Student Enrollment</h2>
+            
+            <div class="form-section">
+                <div class="form-group">
+                    <label>Upload Student CSV</label>
+                    <div class="upload-zone">
+                        <svg class="upload-icon" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <p>Click to upload or drag and drop</p>
+                        <p class="upload-hint">CSV file with student emails and names</p>
+                    </div>
+                </div>
+
+                <div class="section-divider">
+                    <h3 class="section-title">Add Individual Student</h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Student Name</label>
+                            <input type="text" class="input" placeholder="Enter full name">
+                        </div>
+                        <div class="form-group">
+                            <label>Email</label>
+                            <input type="email" class="input" placeholder="student@university.edu">
+                        </div>
+                    </div>
+                    <button class="btn btn-primary">Add Student</button>
+                </div>
+
+                <div class="section-divider">
+                    <h3 class="section-title">Share Authorization with TA</h3>
+                    <div class="flex-row">
+                        <input type="email" class="input flex-1" placeholder="TA email address">
+                        <button class="btn btn-success">Share Access</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <template id="instructorGrouping">
+        <div class="panel">
+            <h2 class="panel-title">Group Management</h2>
+            
+            <div class="form-section">
+                <div class="alert alert-info">
+                    <svg class="alert-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                    <div>
+                        <p class="alert-title">Grouping Options</p>
+                        <p class="alert-text">Choose how to organize students for the next assignment</p>
+                    </div>
+                </div>
+
+                <div class="button-row">
+                    <button class="btn btn-primary flex-1">Random Reshuffle</button>
+                    <button class="btn btn-purple flex-1">Keep Same Groups</button>
+                </div>
+
+                <div class="section-divider">
+                    <h3 class="section-title">Current Groups</h3>
+                    <div class="group-list">
+                        <div class="group-card">
+                            <div class="group-header">
+                                <h4>Group 1</h4>
+                                <button class="btn-link">Edit Members</button>
+                            </div>
+                            <div class="member-list">
+                                <div class="member-item">
+                                    <span>Alice Chen</span>
+                                    <select class="input-sm">
+                                        <option>Group 1</option>
+                                        <option>Group 2</option>
+                                        <option>Group 3</option>
+                                    </select>
+                                </div>
+                                <div class="member-item">
+                                    <span>Bob Smith</span>
+                                    <select class="input-sm">
+                                        <option>Group 1</option>
+                                        <option>Group 2</option>
+                                        <option>Group 3</option>
+                                    </select>
+                                </div>
+                                <div class="member-item">
+                                    <span>Carol Wang</span>
+                                    <select class="input-sm">
+                                        <option>Group 1</option>
+                                        <option>Group 2</option>
+                                        <option>Group 3</option>
+                                    </select>
+                                </div>
+                                <div class="member-item">
+                                    <span>David Lee</span>
+                                    <select class="input-sm">
+                                        <option>Group 1</option>
+                                        <option>Group 2</option>
+                                        <option>Group 3</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="group-card">
+                            <div class="group-header">
+                                <h4>Group 2</h4>
+                                <button class="btn-link">Edit Members</button>
+                            </div>
+                            <div class="member-list">
+                                <div class="member-item">
+                                    <span>Eva Martinez</span>
+                                    <select class="input-sm">
+                                        <option>Group 2</option>
+                                        <option>Group 1</option>
+                                        <option>Group 3</option>
+                                    </select>
+                                </div>
+                                <div class="member-item">
+                                    <span>Frank Brown</span>
+                                    <select class="input-sm">
+                                        <option>Group 2</option>
+                                        <option>Group 1</option>
+                                        <option>Group 3</option>
+                                    </select>
+                                </div>
+                                <div class="member-item">
+                                    <span>Grace Kim</span>
+                                    <select class="input-sm">
+                                        <option>Group 2</option>
+                                        <option>Group 1</option>
+                                        <option>Group 3</option>
+                                    </select>
+                                </div>
+                                <div class="member-item">
+                                    <span>Henry Davis</span>
+                                    <select class="input-sm">
+                                        <option>Group 2</option>
+                                        <option>Group 1</option>
+                                        <option>Group 3</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section-divider">
+                    <h3 class="section-title">Monitor SGLA Progress</h3>
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <p class="stat-value stat-blue">8</p>
+                            <p class="stat-label">Groups Formed</p>
+                        </div>
+                        <div class="stat-card">
+                            <p class="stat-value stat-green">6</p>
+                            <p class="stat-label">Submissions</p>
+                        </div>
+                        <div class="stat-card">
+                            <p class="stat-value stat-purple">18</p>
+                            <p class="stat-label">Reviews Complete</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <template id="instructorGrades">
+        <div class="panel">
+            <h2 class="panel-title">Grade Management</h2>
+            
+            <div class="form-section">
+                <div class="button-row">
+                    <button class="btn btn-success">Export All Grades (CSV)</button>
+                    <button class="btn btn-primary">View Peer Evaluation Grades</button>
+                </div>
+
+                <div class="section-divider">
+                    <h3 class="section-title">Assignment Grades</h3>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Group</th>
+                                    <th>Assignment</th>
+                                    <th>Peer Grade</th>
+                                    <th>Appeal Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Group 1</td>
+                                    <td>Database Design</td>
+                                    <td class="font-semibold">A-</td>
+                                    <td><span class="badge badge-gray">No Appeal</span></td>
+                                    <td><button class="btn-link">Override</button></td>
+                                </tr>
+                                <tr>
+                                    <td>Group 2</td>
+                                    <td>Database Design</td>
+                                    <td class="font-semibold">B+</td>
+                                    <td><span class="badge badge-yellow">Pending</span></td>
+                                    <td><button class="btn-link">Override</button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="section-divider">
+                    <h3 class="section-title">Grade Override</h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Select Group</label>
+                            <select class="input">
+                                <option>Group 1</option>
+                                <option>Group 2</option>
+                                <option>Group 3</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>New Grade</label>
+                            <input type="text" class="input" placeholder="e.g., A or 95">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Comments</label>
+                        <textarea class="textarea" rows="3" placeholder="Reason for grade override..."></textarea>
+                    </div>
+                    <button class="btn btn-orange">Apply Override</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- Student Content Templates -->
+    <template id="studentProgress">
+        <div class="panel">
+            <h2 class="panel-title">Your Progress</h2>
+            
+            <div class="form-section">
+                <div class="stats-grid-3">
+                    <div class="stat-card stat-bg-blue">
+                        <p class="stat-value stat-blue">3</p>
+                        <p class="stat-label">Assignments Completed</p>
+                    </div>
+                    <div class="stat-card stat-bg-green">
+                        <p class="stat-value stat-green">5</p>
+                        <p class="stat-label">Reviews Done</p>
+                    </div>
+                    <div class="stat-card stat-bg-purple">
+                        <p class="stat-value stat-purple">A-</p>
+                        <p class="stat-label">Average Grade</p>
+                    </div>
+                </div>
+
+                <div class="section-divider">
+                    <h3 class="section-title">Upcoming Tasks</h3>
+                    <div class="task-list">
+                        <div class="task-item task-yellow">
+                            <div>
+                                <p class="task-title">Peer Review Due</p>
+                                <p class="task-meta">Database Design - Group 3</p>
+                            </div>
+                            <span class="task-deadline">Due in 2 days</span>
+                        </div>
+                        <div class="task-item task-blue">
+                            <div>
+                                <p class="task-title">Assignment Submission</p>
+                                <p class="task-meta">Implementation Phase</p>
+                            </div>
+                            <span class="task-deadline">Due in 5 days</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <template id="studentGroup">
+        <div class="panel">
+            <h2 class="panel-title">Your Group</h2>
+            
+            <div class="form-section">
+                <div class="info-card">
+                    <h3 class="section-title">Group Members</h3>
+                    <div class="member-list-simple">
+                        <div class="member-simple">
+                            <span>Alice Chen (You)</span>
+                            <span class="member-email">alice.chen@university.edu</span>
+                        </div>
+                        <div class="member-simple">
+                            <span>Bob Smith</span>
+                            <span class="member-email">bob.smith@university.edu</span>
+                        </div>
+                        <div class="member-simple">
+                            <span>Carol Wang</span>
+                            <span class="member-email">carol.wang@university.edu</span>
+                        </div>
+                        <div class="member-simple">
+                            <span>David Lee</span>
+                            <span class="member-email">david.lee@university.edu</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section-divider">
+                    <h3 class="section-title">Current Assignment: Database Design</h3>
+                    <p class="text-meta">Due: December 15, 2024</p>
+                    
+                    <div class="upload-zone" style="margin: 1rem 0;">
+                        <svg class="upload-icon-sm" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <p>Upload Group Assignment</p>
+                        <p class="upload-hint">PDF, DOC, or ZIP file</p>
+                        <button class="btn btn-primary" style="margin-top: 0.75rem;">Choose File</button>
+                    </div>
+
+                    <div class="success-box">
+                        <div class="success-icon">✓</div>
+                        <div class="flex-1">
+                            <p class="success-title">Submission Confirmed</p>
+                            <p class="success-text">database_design_final.pdf uploaded on Dec 10, 2024</p>
+                        </div>
+                        <button class="btn-link">Download</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <template id="studentPeerEval">
+        <div class="panel">
+            <h2 class="panel-title">Peer Evaluation</h2>
+            
+            <div class="form-section">
+                <div class="alert alert-info">
+                    <div style="flex: 1;">
+                        <p class="alert-title">Reviewing: Group 3 - Database Design</p>
+                        <p class="alert-text">Anonymous double-blind review</p>
+                    </div>
+                </div>
+
+                <div class="info-card" style="margin-bottom: 1rem;">
+                    <h3 class="section-title" style="margin-bottom: 0.5rem;">Assignment Submission</h3>
+                    <button class="btn-link">View Submission</button>
+                </div>
+
+                <div class="form-group">
+                    <label>Grade</label>
+                    <select class="input">
+                        <option value="">Select grade...</option>
+                        <option>A</option>
+                        <option>A-</option>
+                        <option>B+</option>
+                        <option>B</option>
+                        <option>B-</option>
+                        <option>C+</option>
+                        <option>C</option>
+                        <option>C-</option>
+                        <option>D</option>
+                        <option>F</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Feedback (Required)</label>
+                    <textarea class="textarea" rows="6" placeholder="Provide detailed feedback based on the rubric..."></textarea>
+                </div>
+
+                <div class="alert alert-warning">
+                    <p><strong>Rubric:</strong> Completeness (40%), Code Quality (30%), Documentation (20%), Creativity (10%)</p>
+                </div>
+
+                <button class="btn btn-success btn-full">Submit Review</button>
+            </div>
+        </div>
+    </template>
+
+    <template id="studentGrades">
+        <div class="panel">
+            <h2 class="panel-title">Your Grades</h2>
+            
+            <div class="form-section">
+                <div class="grade-card">
+                    <div class="grade-header">
+                        <div>
+                            <h3 class="grade-title">Database Design</h3>
+                            <p class="text-meta">Submitted: Dec 10, 2024</p>
+                        </div>
+                        <span class="grade-value">A-</span>
+                    </div>
+                    
+                    <div class="feedback-box">
+                        <p class="feedback-label">Peer Feedback:</p>
+                        <p class="feedback-text">"Excellent database design with clear entity relationships. Documentation could be more detailed in some areas. Great work overall!"</p>
+                    </div>
+
+                    <div class="appeal-section">
+                        <p class="feedback-label">Appeal this grade?</p>
+                        <textarea class="textarea" rows="3" placeholder="Explain why you believe this grade should be reviewed..."></textarea>
+                        <button class="btn btn-orange" style="margin-top: 0.5rem;">Submit Appeal</button>
+                        <p class="appeal-note">Note: All group members must agree to appeal</p>
+                    </div>
+                </div>
+
+                <div class="grade-card grade-card-past">
+                    <div class="grade-header">
+                        <div>
+                            <h3 class="grade-title">System Analysis</h3>
+                            <p class="text-meta">Submitted: Nov 28, 2024</p>
+                        </div>
+                        <span class="grade-value grade-value-blue">B+</span>
+                    </div>
+                    
+                    <div class="feedback-box feedback-box-white">
+                        <p class="feedback-label">Peer Feedback:</p>
+                        <p class="feedback-text">"Good analysis with solid understanding of requirements. Some diagrams could be clearer."</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <template id="studentAppealGrader">
+        <div class="panel">
+            <h2 class="panel-title">Appeal Assessment</h2>
+            
+            <div class="form-section">
+                <div class="alert alert-purple">
+                    <div>
+                        <p class="alert-title">You have been selected as an Appeal Assessor</p>
+                        <p class="alert-text">Review the original submission, peer feedback, and appeal argument</p>
+                    </div>
+                </div>
+
+                <div class="appeal-review-card">
+                    <h3 class="section-title">Assignment: Database Design</h3>
+                    
+                    <div class="appeal-info">
+                        <div class="appeal-info-item">
+                            <p class="appeal-info-label">Original Peer Grade: B-</p>
+                            <p class="appeal-info-text"><strong>Peer Feedback:</strong> "Incomplete documentation. Missing key sections."</p>
+                        </div>
+
+                        <div class="appeal-info-item appeal-argument">
+                            <p class="appeal-info-label">Appeal Argument:</p>
+                            <p class="appeal-info-text">"We believe all required sections were included. The peer reviewer may have used the wrong rubric."</p>
+                        </div>
+                    </div>
+
+                    <button class="btn-link">Download Original Submission</button>
+                </div>
+
+                <div class="form-group">
+                    <label>Your Assessment Grade</label>
+                    <select class="input">
+                        <option value="">Select grade...</option>
+                        <option>A</option>
+                        <option>A-</option>
+                        <option>B+</option>
+                        <option>B</option>
+                        <option>B-</option>
+                        <option>C+</option>
+                        <option>C</option>
+                        <option>C-</option>
+                        <option>D</option>
+                        <option>F</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Assessment Comments</label>
+                    <textarea class="textarea" rows="6" placeholder="Provide your assessment and reasoning..."></textarea>
+                </div>
+
+                <button class="btn btn-purple btn-full">Submit Appeal Assessment</button>
+            </div>
+        </div>
+    </template>
+
+    <template id="studentReviewHistory">
+        <div class="panel">
+            <h2 class="panel-title">Review History</h2>
+            
+            <div class="form-section">
+                <div class="review-history-card">
+                    <div class="review-header">
+                        <div>
+                            <h3 class="grade-title">Review for Group 5</h3>
+                            <p class="text-meta">Database Design - Submitted Dec 8, 2024</p>
+                        </div>
+                        <span class="badge badge-green-lg">Score: 100</span>
+                    </div>
+                    <div class="feedback-box feedback-box-white">
+                        <p class="feedback-text">
+                            <strong>Your Grade:</strong> A-<br>
+                            <strong>Your Feedback:</strong> "Excellent work with comprehensive analysis..."
+                        </p>
+                    </div>
+                </div>
+
+                <div class="review-history-card">
+                    <div class="review-header">
+                        <div>
+                            <h3 class="grade-title">Review for Group 2</h3>
+                            <p class="text-meta">System Analysis - Submitted Nov 26, 2024</p>
+                        </div>
+                        <span class="badge badge-yellow-lg">Score: 70</span>
+                    </div>
+                    <div class="feedback-box feedback-box-yellow">
+                        <p class="feedback-text">
+                            <strong>Your Grade:</strong> B<br>
+                            <strong>Appeal Result:</strong> Appeal assessor graded it as A-, deviation of 3 grade levels
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <script src="script.js"></script>
+</body>
+</html>

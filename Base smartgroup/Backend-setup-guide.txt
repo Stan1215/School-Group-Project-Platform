@@ -1,0 +1,871 @@
+# SmartGroup - Backend Implementation Guide
+
+This guide will help you add a login system and database management to your SmartGroup application.
+
+## Architecture Overview
+
+```
+Frontend (HTML/CSS/JS) 
+    ↓
+Backend API (Node.js + Express)
+    ↓
+Database (PostgreSQL)
+```
+
+## Prerequisites
+
+- Node.js (v14 or higher)
+- PostgreSQL (v12 or higher)
+- npm or yarn package manager
+
+---
+
+## Step 1: Database Schema Setup
+
+### Install PostgreSQL
+
+```bash
+# Ubuntu/Debian
+sudo apt-get install postgresql postgresql-contrib
+
+# macOS
+brew install postgresql
+
+# Windows: Download from https://www.postgresql.org/download/
+```
+
+### Create Database and Tables
+
+```sql
+-- Create database
+CREATE DATABASE smartgroup_db;
+
+-- Connect to database
+\c smartgroup_db;
+
+-- Users table (for authentication)
+CREATE TABLE users (
+    user_id SERIAL PRIMARY KEY,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    full_name VARCHAR(255) NOT NULL,
+    role VARCHAR(20) CHECK (role IN ('instructor', 'student', 'ta')) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_login TIMESTAMP
+);
+
+-- Courses table
+CREATE TABLE courses (
+    course_id SERIAL PRIMARY KEY,
+    course_name VARCHAR(255) NOT NULL,
+    course_section VARCHAR(50),
+    grading_system VARCHAR(50) DEFAULT 'letter',
+    instructor_id INTEGER REFERENCES users(user_id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Course enrollment (many-to-many relationship)
+CREATE TABLE enrollments (
+    enrollment_id SERIAL PRIMARY KEY,
+    course_id INTEGER REFERENCES courses(course_id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
+    enrolled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(course_id, user_id)
+);
+
+-- Assignments table
+CREATE TABLE assignments (
+    assignment_id SERIAL PRIMARY KEY,
+    course_id INTEGER REFERENCES courses(course_id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    rubric TEXT,
+    due_date TIMESTAMP NOT NULL,
+    students_per_group INTEGER DEFAULT 4,
+    num_graders INTEGER DEFAULT 3,
+    status VARCHAR(20) DEFAULT 'upcoming',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Groups table
+CREATE TABLE groups (
+    group_id SERIAL PRIMARY KEY,
+    assignment_id INTEGER REFERENCES assignments(assignment_id) ON DELETE CASCADE,
+    group_number INTEGER NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Group members (many-to-many relationship)
+CREATE TABLE group_members (
+    group_member_id SERIAL PRIMARY KEY,
+    group_id INTEGER REFERENCES groups(group_id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
+    UNIQUE(group_id, user_id)
+);
+
+-- Submissions table
+CREATE TABLE submissions (
+    submission_id SERIAL PRIMARY KEY,
+    assignment_id INTEGER REFERENCES assignments(assignment_id) ON DELETE CASCADE,
+    group_id INTEGER REFERENCES groups(group_id) ON DELETE CASCADE,
+    file_path VARCHAR(500),
+    submitted_by INTEGER REFERENCES users(user_id),
+    submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    status VARCHAR(20) DEFAULT 'submitted'
+);
+
+-- Peer reviews table
+CREATE TABLE peer_reviews (
+    review_id SERIAL PRIMARY KEY,
+    submission_id INTEGER REFERENCES submissions(submission_id) ON DELETE CASCADE,
+    reviewer_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
+    grade VARCHAR(10),
+    feedback TEXT NOT NULL,
+    review_score INTEGER DEFAULT 100, -- Peer assessor evaluation score
+    reviewed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Appeals table
+CREATE TABLE appeals (
+    appeal_id SERIAL PRIMARY KEY,
+    submission_id INTEGER REFERENCES submissions(submission_id) ON DELETE CASCADE,
+    group_id INTEGER REFERENCES groups(group_id) ON DELETE CASCADE,
+    appeal_reason TEXT NOT NULL,
+    appeal_assessor_id INTEGER REFERENCES users(user_id),
+    new_grade VARCHAR(10),
+    appeal_feedback TEXT,
+    status VARCHAR(20) DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    resolved_at TIMESTAMP
+);
+
+-- Final grades table
+CREATE TABLE final_grades (
+    grade_id SERIAL PRIMARY KEY,
+    submission_id INTEGER REFERENCES submissions(submission_id) ON DELETE CASCADE,
+    group_id INTEGER REFERENCES groups(group_id) ON DELETE CASCADE,
+    final_grade VARCHAR(10),
+    grade_source VARCHAR(20) DEFAULT 'peer', -- 'peer', 'appeal', 'override'
+    instructor_override BOOLEAN DEFAULT FALSE,
+    override_reason TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create indexes for better performance
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_enrollments_course ON enrollments(course_id);
+CREATE INDEX idx_enrollments_user ON enrollments(user_id);
+CREATE INDEX idx_assignments_course ON assignments(course_id);
+CREATE INDEX idx_groups_assignment ON groups(assignment_id);
+CREATE INDEX idx_submissions_assignment ON submissions(assignment_id);
+CREATE INDEX idx_peer_reviews_submission ON peer_reviews(submission_id);
+CREATE INDEX idx_peer_reviews_reviewer ON peer_reviews(reviewer_id);
+```
+
+---
+
+## Step 2: Backend Server Setup
+
+### Initialize Node.js Project
+
+```bash
+mkdir smartgroup-backend
+cd smartgroup-backend
+npm init -y
+```
+
+### Install Dependencies
+
+```bash
+npm install express pg bcrypt jsonwebtoken cors dotenv multer
+npm install --save-dev nodemon
+```
+
+### Project Structure
+
+```
+smartgroup-backend/
+├── config/
+│   └── database.js
+├── middleware/
+│   └── auth.js
+├── routes/
+│   ├── auth.js
+│   ├── courses.js
+│   ├── assignments.js
+│   ├── groups.js
+│   ├── submissions.js
+│   └── reviews.js
+├── uploads/
+├── .env
+├── server.js
+└── package.json
+```
+
+### Environment Variables (.env)
+
+```env
+PORT=5000
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=smartgroup_db
+DB_USER=postgres
+DB_PASSWORD=your_password
+
+JWT_SECRET=your_super_secret_jwt_key_change_this_in_production
+JWT_EXPIRE=7d
+
+NODE_ENV=development
+```
+
+---
+
+## Step 3: Backend Code Files
+
+### config/database.js
+
+```javascript
+const { Pool } = require('pg');
+require('dotenv').config();
+
+const pool = new Pool({
+    host: process.env.DB_HOST,
+    port: process.env.DB_PORT,
+    database: process.env.DB_NAME,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+});
+
+pool.on('connect', () => {
+    console.log('Connected to PostgreSQL database');
+});
+
+module.exports = pool;
+```
+
+### middleware/auth.js
+
+```javascript
+const jwt = require('jsonwebtoken');
+
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+        return res.status(401).json({ message: 'Access token required' });
+    }
+
+    jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+        if (err) {
+            return res.status(403).json({ message: 'Invalid or expired token' });
+        }
+        req.user = user;
+        next();
+    });
+};
+
+const authorizeRole = (...roles) => {
+    return (req, res, next) => {
+        if (!roles.includes(req.user.role)) {
+            return res.status(403).json({ 
+                message: 'You do not have permission to perform this action' 
+            });
+        }
+        next();
+    };
+};
+
+module.exports = { authenticateToken, authorizeRole };
+```
+
+### routes/auth.js
+
+```javascript
+const express = require('express');
+const router = express.Router();
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const pool = require('../config/database');
+
+// Register new user
+router.post('/register', async (req, res) => {
+    try {
+        const { email, password, full_name, role } = req.body;
+
+        // Validate input
+        if (!email || !password || !full_name || !role) {
+            return res.status(400).json({ message: 'All fields are required' });
+        }
+
+        // Check if user already exists
+        const userExists = await pool.query(
+            'SELECT * FROM users WHERE email = $1',
+            [email]
+        );
+
+        if (userExists.rows.length > 0) {
+            return res.status(400).json({ message: 'User already exists' });
+        }
+
+        // Hash password
+        const salt = await bcrypt.genSalt(10);
+        const password_hash = await bcrypt.hash(password, salt);
+
+        // Insert new user
+        const result = await pool.query(
+            'INSERT INTO users (email, password_hash, full_name, role) VALUES ($1, $2, $3, $4) RETURNING user_id, email, full_name, role',
+            [email, password_hash, full_name, role]
+        );
+
+        const user = result.rows[0];
+
+        // Generate JWT token
+        const token = jwt.sign(
+            { user_id: user.user_id, email: user.email, role: user.role },
+            process.env.JWT_SECRET,
+            { expiresIn: process.env.JWT_EXPIRE }
+        );
+
+        res.status(201).json({
+            message: 'User registered successfully',
+            token,
+            user: {
+                user_id: user.user_id,
+                email: user.email,
+                full_name: user.full_name,
+                role: user.role
+            }
+        });
+    } catch (error) {
+        console.error('Registration error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// Login
+router.post('/login', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        // Validate input
+        if (!email || !password) {
+            return res.status(400).json({ message: 'Email and password required' });
+        }
+
+        // Find user
+        const result = await pool.query(
+            'SELECT * FROM users WHERE email = $1',
+            [email]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(401).json({ message: 'Invalid credentials' });
+        }
+
+        const user = result.rows[0];
+
+        // Verify password
+        const isValidPassword = await bcrypt.compare(password, user.password_hash);
+
+        if (!isValidPassword) {
+            return res.status(401).json({ message: 'Invalid credentials' });
+        }
+
+        // Update last login
+        await pool.query(
+            'UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE user_id = $1',
+            [user.user_id]
+        );
+
+        // Generate JWT token
+        const token = jwt.sign(
+            { user_id: user.user_id, email: user.email, role: user.role },
+            process.env.JWT_SECRET,
+            { expiresIn: process.env.JWT_EXPIRE }
+        );
+
+        res.json({
+            message: 'Login successful',
+            token,
+            user: {
+                user_id: user.user_id,
+                email: user.email,
+                full_name: user.full_name,
+                role: user.role
+            }
+        });
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// Get current user profile
+router.get('/me', authenticateToken, async (req, res) => {
+    try {
+        const result = await pool.query(
+            'SELECT user_id, email, full_name, role, created_at, last_login FROM users WHERE user_id = $1',
+            [req.user.user_id]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        res.json({ user: result.rows[0] });
+    } catch (error) {
+        console.error('Get profile error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+module.exports = router;
+```
+
+### routes/courses.js
+
+```javascript
+const express = require('express');
+const router = express.Router();
+const pool = require('../config/database');
+const { authenticateToken, authorizeRole } = require('../middleware/auth');
+
+// Create new course (Instructor only)
+router.post('/', authenticateToken, authorizeRole('instructor'), async (req, res) => {
+    try {
+        const { course_name, course_section, grading_system } = req.body;
+        const instructor_id = req.user.user_id;
+
+        const result = await pool.query(
+            'INSERT INTO courses (course_name, course_section, grading_system, instructor_id) VALUES ($1, $2, $3, $4) RETURNING *',
+            [course_name, course_section, grading_system, instructor_id]
+        );
+
+        res.status(201).json({
+            message: 'Course created successfully',
+            course: result.rows[0]
+        });
+    } catch (error) {
+        console.error('Create course error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// Get all courses for current user
+router.get('/', authenticateToken, async (req, res) => {
+    try {
+        let query;
+        let params;
+
+        if (req.user.role === 'instructor') {
+            query = 'SELECT * FROM courses WHERE instructor_id = $1 ORDER BY created_at DESC';
+            params = [req.user.user_id];
+        } else {
+            query = `
+                SELECT c.* FROM courses c
+                INNER JOIN enrollments e ON c.course_id = e.course_id
+                WHERE e.user_id = $1
+                ORDER BY c.created_at DESC
+            `;
+            params = [req.user.user_id];
+        }
+
+        const result = await pool.query(query, params);
+
+        res.json({ courses: result.rows });
+    } catch (error) {
+        console.error('Get courses error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// Get specific course
+router.get('/:course_id', authenticateToken, async (req, res) => {
+    try {
+        const { course_id } = req.params;
+
+        const result = await pool.query(
+            'SELECT * FROM courses WHERE course_id = $1',
+            [course_id]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: 'Course not found' });
+        }
+
+        res.json({ course: result.rows[0] });
+    } catch (error) {
+        console.error('Get course error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// Enroll students (Instructor only)
+router.post('/:course_id/enroll', authenticateToken, authorizeRole('instructor'), async (req, res) => {
+    try {
+        const { course_id } = req.params;
+        const { student_emails } = req.body; // Array of email addresses
+
+        const enrolled = [];
+        const errors = [];
+
+        for (const email of student_emails) {
+            try {
+                // Find user by email
+                const userResult = await pool.query(
+                    'SELECT user_id FROM users WHERE email = $1',
+                    [email]
+                );
+
+                if (userResult.rows.length === 0) {
+                    errors.push({ email, message: 'User not found' });
+                    continue;
+                }
+
+                const user_id = userResult.rows[0].user_id;
+
+                // Enroll student
+                await pool.query(
+                    'INSERT INTO enrollments (course_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+                    [course_id, user_id]
+                );
+
+                enrolled.push(email);
+            } catch (err) {
+                errors.push({ email, message: err.message });
+            }
+        }
+
+        res.json({
+            message: 'Enrollment process completed',
+            enrolled,
+            errors
+        });
+    } catch (error) {
+        console.error('Enroll students error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+module.exports = router;
+```
+
+### server.js
+
+```javascript
+const express = require('express');
+const cors = require('cors');
+require('dotenv').config();
+
+const authRoutes = require('./routes/auth');
+const courseRoutes = require('./routes/courses');
+// Import other routes as you create them
+
+const app = express();
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/courses', courseRoutes);
+// Add other routes
+
+// Health check
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'OK', message: 'SmartGroup API is running' });
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+    console.error(err.stack);
+    res.status(500).json({ message: 'Something went wrong!' });
+});
+
+const PORT = process.env.PORT || 5000;
+
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+});
+```
+
+### package.json scripts
+
+```json
+{
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  }
+}
+```
+
+---
+
+## Step 4: Update Frontend for Authentication
+
+### Create a new file: auth.js (Frontend)
+
+```javascript
+const API_URL = 'http://localhost:5000/api';
+
+// Store token in memory
+let authToken = localStorage.getItem('token');
+let currentUser = JSON.parse(localStorage.getItem('user') || 'null');
+
+// Login function
+async function login(email, password) {
+    try {
+        const response = await fetch(`${API_URL}/auth/login`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ email, password })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.message || 'Login failed');
+        }
+
+        // Store token and user data
+        authToken = data.token;
+        currentUser = data.user;
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+
+        return data;
+    } catch (error) {
+        console.error('Login error:', error);
+        throw error;
+    }
+}
+
+// Logout function
+function logout() {
+    authToken = null;
+    currentUser = null;
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    window.location.href = 'login.html';
+}
+
+// Check if user is authenticated
+function isAuthenticated() {
+    return !!authToken;
+}
+
+// Get current user
+function getCurrentUser() {
+    return currentUser;
+}
+
+// Make authenticated API request
+async function apiRequest(endpoint, options = {}) {
+    if (!authToken) {
+        throw new Error('Not authenticated');
+    }
+
+    const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`,
+        ...options.headers
+    };
+
+    const response = await fetch(`${API_URL}${endpoint}`, {
+        ...options,
+        headers
+    });
+
+    if (response.status === 401) {
+        logout();
+        throw new Error('Session expired');
+    }
+
+    return response;
+}
+```
+
+### Create login.html
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartGroup - Login</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .login-container {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .login-box {
+            background: white;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            width: 100%;
+            max-width: 400px;
+        }
+        .login-title {
+            font-size: 1.875rem;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 1.5rem;
+            color: #1f2937;
+        }
+        .error-message {
+            background-color: #fee2e2;
+            border: 1px solid #fecaca;
+            color: #991b1b;
+            padding: 0.75rem;
+            border-radius: 0.375rem;
+            margin-bottom: 1rem;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-box">
+            <h1 class="login-title">SmartGroup</h1>
+            <div id="errorMessage" class="error-message"></div>
+            
+            <form id="loginForm">
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="email" class="input" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="password" class="input" required>
+                </div>
+                
+                <button type="submit" class="btn btn-primary btn-full">Login</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="auth.js"></script>
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const errorMessage = document.getElementById('errorMessage');
+            
+            try {
+                await login(email, password);
+                window.location.href = 'index.html';
+            } catch (error) {
+                errorMessage.textContent = error.message;
+                errorMessage.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>
+```
+
+### Update script.js to check authentication
+
+Add this at the beginning of script.js:
+
+```javascript
+// Check authentication on page load
+if (!isAuthenticated()) {
+    window.location.href = 'login.html';
+}
+
+// Set current user and role from authentication
+currentRole = getCurrentUser().role;
+currentTab = currentRole === 'instructor' ? 'course' : 'progress';
+```
+
+---
+
+## Step 5: Running the Application
+
+### Start the database
+
+```bash
+# Start PostgreSQL
+sudo service postgresql start  # Linux
+brew services start postgresql # macOS
+```
+
+### Start the backend server
+
+```bash
+cd smartgroup-backend
+npm run dev
+```
+
+### Start the frontend
+
+```bash
+# Use any local server, for example:
+python -m http.server 8000
+# Or
+npx serve
+```
+
+---
+
+## Step 6: Testing
+
+### Create a test user via API
+
+```bash
+curl -X POST http://localhost:5000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "instructor@test.com",
+    "password": "password123",
+    "full_name": "Dr. Jane Smith",
+    "role": "instructor"
+  }'
+```
+
+### Test login
+
+Visit `http://localhost:8000/login.html` and use the credentials you created.
+
+---
+
+## Security Best Practices
+
+1. **Never commit .env files** - Add to .gitignore
+2. **Use strong JWT secrets** - Generate with `openssl rand -base64 32`
+3. **Implement rate limiting** - Use `express-rate-limit`
+4. **Validate all inputs** - Use libraries like `joi` or `express-validator`
+5. **Use HTTPS in production**
+6. **Implement password reset functionality**
+7. **Add email verification**
+8. **Implement CSRF protection**
+
+---
+
+## Next Steps
+
+1. Complete all route files (assignments, groups, submissions, reviews)
+2. Add file upload functionality for assignments
+3. Implement real-time notifications (using Socket.io)
+4. Add email notifications
+5. Create admin panel for system management
+6. Implement automated group formation algorithms
+7. Add analytics and reporting features
+
+Would you like me to provide the code for any specific additional routes or features?
